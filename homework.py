@@ -59,7 +59,7 @@ def get_api_answer(current_timestamp):
 
     # Хотел написать: if not response.ok, но тест не пропускает
     # AttributeError: 'MockResponseGET' object has no attribute 'ok'
-    if response.status_code == HTTPStatus.OK:
+    if response.status_code != HTTPStatus.OK:
         logger.error(
             "(＞︿＜) "
             f"Эндпоинт {ENDPOINT} недоступен."
