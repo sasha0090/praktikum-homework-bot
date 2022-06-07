@@ -23,7 +23,7 @@ ENDPOINT = "https://practicum.yandex.ru/api/user_api/homework_statuses/"
 HEADERS = {"Authorization": f"OAuth {PRACTICUM_TOKEN}"}
 
 
-HOMEWORK_STATUSES = {
+HOMEWORK_VERDICTS = {
     "approved": "Работа проверена: ревьюеру всё понравилось. Ура!",
     "reviewing": "Работа взята на проверку ревьюером.",
     "rejected": "Работа проверена: у ревьюера есть замечания.",
@@ -40,32 +40,32 @@ def send_message(bot, message):
     except Exception as exc:
         logger.error("Не удается отправить сообщение в телеграм.\n"
                      f"Ошибка: {exc}")
-    else:
-        logger.info(f"Отправили сообщение: {message}")
+        return False
+
+    logger.info(f"Отправили сообщение: {message}")
+    return True
 
 
 def get_api_answer(current_timestamp):
     """Делаем запрос к эндпоинту API-сервиса."""
     timestamp = current_timestamp or int(time.time())
     params = {"from_date": timestamp}
+    logger.info("Запрос к эндпоинту")
     try:
-        logger.info("Запрос к эндпоинту")
         response = requests.get(ENDPOINT, headers=HEADERS, params=params)
-
-        # Хотел написать: if not response.ok, но тест не пропускает
-        # AttributeError: 'MockResponseGET' object has no attribute 'ok'
-        if response.status_code != HTTPStatus.OK:
-            logger.error(
-                "(＞︿＜) "
-                f"Эндпоинт {ENDPOINT} недоступен."
-                f"Код ответа API: {response.status_code}"
-            )
-            raise BadHTTPStatus("Код ответа от API не 200.")
-
-    except Exception:
+    except Exception as exc:
         logger.error(f"Проблема с подключением к эндпоинту {ENDPOINT}")
-        raise
+        raise exc
 
+    # Хотел написать: if not response.ok, но тест не пропускает
+    # AttributeError: 'MockResponseGET' object has no attribute 'ok'
+    if response.status_code == HTTPStatus.OK:
+        logger.error(
+            "(＞︿＜) "
+            f"Эндпоинт {ENDPOINT} недоступен."
+            f"Код ответа API: {response.status_code}"
+        )
+        raise BadHTTPStatus("Код ответа от API не 200.")
     return response.json()
 
 
@@ -74,24 +74,38 @@ def check_response(response: dict):
     if not isinstance(response, dict):
         raise TypeError("Ответ не словарь")
     logger.info("Получаем homeworks")
-    homeworks = response["homeworks"]
 
+    homeworks = response.get("homeworks")
+
+    if homeworks is None:
+        raise KeyError("Не нашли homeworks в ответе")
     if not isinstance(homeworks, list):
         raise TypeError("homeworks не список")
     if not homeworks:
         logger.info("Не найдены homeworks")
 
-    return response["homeworks"]
+    return homeworks
 
 
 def parse_status(homework: dict):
     """Извлекает из информации и статус конкретной домашней работы."""
     # Достаем по ключам информацию.
     # Если ключа нет, то логирование и обработка исключения в main'е
-    homework_name = homework["homework_name"]
-    homework_status = homework["status"]
+    homework_name = homework.get("homework_name")
+    homework_status = homework.get("status")
 
-    verdict = HOMEWORK_STATUSES[homework_status]
+    if homework_name is None:
+        raise KeyError("Не нашли homework_name в homework")
+    if homework_status is None:
+        raise KeyError("Не нашли status в homework")
+
+    verdict = HOMEWORK_VERDICTS.get(homework_status)
+    if verdict is None:
+        raise KeyError(
+            f"Недокументированный статус {homework_name}"
+            " домашней работы в ответе API"
+        )
+
     logger.info(f"Получили новый статус {homework_name} - {verdict}")
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
@@ -107,8 +121,9 @@ def check_tokens():
     try:
         for key, value in tokens.items():
             if not value:
-                raise TokenLack("Отсутствует обязательная "
-                                f"переменная окружения: {key}")
+                raise TokenLack(
+                    "Отсутствует обязательная " f"переменная окружения: {key}"
+                )
     except TokenLack as exc:
         logger.critical(exc)
         return False
@@ -138,10 +153,11 @@ def main():
 
         except Exception as error:
             message = f"Сбой в работе программы: {error}"
-            logger.error(error)
+            logger.error(message)
             if last_exc_message != message:
-                last_exc_message = message
-                send_message(bot, message)
+                successfully_sending: bool = send_message(bot, message)
+                if successfully_sending:
+                    last_exc_message = message
 
         logger.info(f"Ждем {RETRY_TIME} секунд")
         time.sleep(RETRY_TIME)
