@@ -29,6 +29,9 @@ HOMEWORK_STATUSES = {
     "rejected": "Работа проверена: у ревьюера есть замечания.",
 }
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.StreamHandler(sys.stdout))
+
 
 def send_message(bot, message):
     """Отправляем сообщение в Telegram чат."""
@@ -148,8 +151,6 @@ if __name__ == "__main__":
     logging.basicConfig(
         format="%(asctime)s  [%(levelname)s]  %(message)s", level=logging.INFO
     )
-    logger = logging.getLogger(__name__)
-    logger.addHandler(logging.StreamHandler(sys.stdout))
 
     if check_tokens():
         logger.info("Запуск бота")
